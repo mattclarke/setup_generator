@@ -129,6 +129,22 @@ class GeneratorModel(QAbstractTableModel):
             self.endRemoveRows()
         return True
 
+    def select_data(self, selected_indices):
+        curr_row = -1
+        row_data = []
+        selected_data = []
+        for row, column in selected_indices:
+            if row != curr_row:
+                if row_data:
+                    selected_data.append(row_data)
+                    row_data = []
+            curr_row = row
+            row_data.append(self._table_data[row][column])
+
+        if row_data:
+            selected_data.append(row_data)
+        return selected_data
+
 
 class GeneratorUI(QtWidgets.QMainWindow):
     def __init__(self):
@@ -144,7 +160,10 @@ class GeneratorUI(QtWidgets.QMainWindow):
             "PV Type",
             "Read/Write",
             "NICOS name",
-            "NICOS type"
+            "NICOS type",
+            "Write PV",
+            "Target PV",
+            "Low level",
         ]
 
         self.model = GeneratorModel(headers)
@@ -224,6 +243,14 @@ class GeneratorUI(QtWidgets.QMainWindow):
                 extract_jira_table(self.txtRawJira.text())))
 
         self.model.update_data_from_clipboard(sanitised, (0,0))
+
+    def _extract_selected_data(self):
+        selected_indices = []
+        for index in self.tableView.selectedIndexes():
+            selected_indices.append((index.row(), index.column()))
+
+        selected_data = self.model.select_data(selected_indices)
+        return selected_data
 
 
 if __name__ == "__main__":
