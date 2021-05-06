@@ -1,14 +1,13 @@
 import re
-
-from PyQt5 import QtWidgets, uic
-from PyQt5.QtCore import QAbstractTableModel, Qt, pyqtSlot, QModelIndex
-from PyQt5.QtGui import QKeySequence
-from PyQt5.QtWidgets import QApplication, QWidget, QTableView, QShortcut
 import sys
 
+from PyQt5 import QtWidgets, uic
+from PyQt5.QtCore import QAbstractTableModel, QModelIndex, Qt, pyqtSlot
+from PyQt5.QtGui import QKeySequence
+from PyQt5.QtWidgets import QApplication, QShortcut, QTableView
 
 NUM_COLUMNS_IN_JIRA = 12
-JIRA_COLUMNS_TO_INCLUDE = {2,4,7,8,9}
+JIRA_COLUMNS_TO_INCLUDE = {2, 4, 7, 8, 9}
 
 
 def extract_jira_table(text):
@@ -16,7 +15,7 @@ def extract_jira_table(text):
 
     col_index = 0
     row = []
-    for d in [x for x in re.split('\t\n*', text)]:
+    for d in [x for x in re.split("\t\n*", text)]:
         if col_index < NUM_COLUMNS_IN_JIRA:
             row.append(d.strip())
             col_index += 1
@@ -45,8 +44,7 @@ def extract_table_from_clipboard_text(text):
     # Uses re.split because "A\n" represents two vertical cells one
     # containing "A" and one being empty.
     # str.splitlines will lose the empty cell but re.split won't
-    return [[x for x in row.split('\t')]
-            for row in re.split('\r?\n', text)]
+    return [[x for x in row.split("\t")] for row in re.split("\r?\n", text)]
 
 
 def convert_table_to_clipboard_text(table_data):
@@ -56,7 +54,7 @@ def convert_table_to_clipboard_text(table_data):
     :param table_data: 2D tabular data
     :return: clipboard text
     """
-    return '\n'.join(['\t'.join(row) for row in table_data])
+    return "\n".join(["\t".join(row) for row in table_data])
 
 
 class GeneratorModel(QAbstractTableModel):
@@ -111,8 +109,7 @@ class GeneratorModel(QAbstractTableModel):
                 if top_left_index[1] + col_index < len(self._header_data):
                     current_column = top_left_index[1] + col_index
                     col_index += 1
-                    self._table_data[current_row][
-                        current_column] = row_data[index]
+                    self._table_data[current_row][current_column] = row_data[index]
                     index += 1
                 else:
                     break
@@ -120,7 +117,7 @@ class GeneratorModel(QAbstractTableModel):
         self.layoutChanged.emit()
 
     def create_empty_row(self, position):
-        self._table_data.insert(position, [''] * len(self._header_data))
+        self._table_data.insert(position, [""] * len(self._header_data))
 
     def removeRows(self, rows, index=QModelIndex()):
         for row in sorted(rows, reverse=True):
@@ -140,7 +137,6 @@ class GeneratorModel(QAbstractTableModel):
                     row_data = []
             curr_row = row
             row_data.append(self._table_data[row][column])
-
         if row_data:
             selected_data.append(row_data)
         return selected_data
@@ -149,7 +145,7 @@ class GeneratorModel(QAbstractTableModel):
 class GeneratorUI(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
-        uic.loadUi('form.ui', self)
+        uic.loadUi("form.ui", self)
         self._setup_table()
 
     def _setup_table(self):
@@ -209,8 +205,7 @@ class GeneratorUI(QtWidgets.QMainWindow):
             self._do_bulk_update(copied_table[0][0])
             return
 
-        self.model.update_data_from_clipboard(
-            copied_table, top_left)
+        self.model.update_data_from_clipboard(copied_table, top_left)
 
     def _handle_cut_cells(self):
         self._handle_copy_cells()
@@ -218,7 +213,7 @@ class GeneratorUI(QtWidgets.QMainWindow):
 
     def _handle_delete_cells(self):
         for index in self.tableView.selectedIndexes():
-            self.model.update_data_at_index(index.row(), index.column(), '')
+            self.model.update_data_at_index(index.row(), index.column(), "")
 
     def _handle_copy_cells(self):
         selected_data = self._extract_selected_data()
@@ -239,10 +234,10 @@ class GeneratorUI(QtWidgets.QMainWindow):
     @pyqtSlot()
     def on_btnSanitise_clicked(self):
         sanitised = extract_table_from_clipboard_text(
-            convert_table_to_clipboard_text(
-                extract_jira_table(self.txtRawJira.text())))
+            convert_table_to_clipboard_text(extract_jira_table(self.txtRawJira.text()))
+        )
 
-        self.model.update_data_from_clipboard(sanitised, (0,0))
+        self.model.update_data_from_clipboard(sanitised, (0, 0))
 
     def _extract_selected_data(self):
         selected_indices = []

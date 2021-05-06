@@ -1,1 +1,4 @@
 PyQt5
+black
+isort
+flake8
