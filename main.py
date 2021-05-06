@@ -1,3 +1,4 @@
+import copy
 import re
 import sys
 
@@ -141,6 +142,9 @@ class GeneratorModel(QAbstractTableModel):
             selected_data.append(row_data)
         return selected_data
 
+    def get_data(self):
+        return copy.deepcopy(self._table_data)
+
 
 class GeneratorUI(QtWidgets.QMainWindow):
     def __init__(self):
@@ -246,6 +250,21 @@ class GeneratorUI(QtWidgets.QMainWindow):
 
         selected_data = self.model.select_data(selected_indices)
         return selected_data
+
+    @pyqtSlot()
+    def on_btnGenerate_clicked(self):
+        # TODO: Create a random file - new_setup_<timestamp>.py
+        lines = [
+            f"description = '{self.txtDescription.text()}'",
+            "\n",
+            f"pv_root = '{self.txtPvRoot.text()}:'",
+            "\n",
+            "devices = dict("
+        ]
+        # TODO: this is the clever part
+        table_data = self.model.get_data()
+
+        print(lines)
 
 
 if __name__ == "__main__":
