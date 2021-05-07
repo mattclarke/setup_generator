@@ -1,149 +1,15 @@
-import copy
-import re
+import os
 import sys
 
 from PyQt5 import QtWidgets, uic
-from PyQt5.QtCore import QAbstractTableModel, QModelIndex, Qt, pyqtSlot
+from PyQt5.QtCore import Qt, pyqtSlot
 from PyQt5.QtGui import QKeySequence
-from PyQt5.QtWidgets import QApplication, QShortcut, QTableView
+from PyQt5.QtWidgets import QApplication, QFileDialog, QShortcut, QTableView
 
-NUM_COLUMNS_IN_JIRA = 12
-JIRA_COLUMNS_TO_INCLUDE = {2, 4, 7, 8, 9}
-
-
-def extract_jira_table(text):
-    table_data = []
-
-    col_index = 0
-    row = []
-    for d in [x for x in re.split("\t\n*", text)]:
-        if col_index < NUM_COLUMNS_IN_JIRA:
-            row.append(d.strip())
-            col_index += 1
-        else:
-            masked_row = [x for i, x in enumerate(row) if i in JIRA_COLUMNS_TO_INCLUDE]
-            table_data.append(masked_row)
-            row = [d.strip()]
-            col_index = 1
-    if row:
-        masked_row = [x for i, x in enumerate(row) if i in JIRA_COLUMNS_TO_INCLUDE]
-        table_data.append(masked_row)
-
-    return table_data
-
-
-def extract_table_from_clipboard_text(text):
-    """
-    Extracts 2-D tabular data from clipboard text.
-
-    When sent to the clipboard, tabular data from Excel, etc. is represented as
-    a text string with tabs for columns and newlines for rows.
-
-    :param text: The clipboard text
-    :return: tabular data
-    """
-    # Uses re.split because "A\n" represents two vertical cells one
-    # containing "A" and one being empty.
-    # str.splitlines will lose the empty cell but re.split won't
-    return [[x for x in row.split("\t")] for row in re.split("\r?\n", text)]
-
-
-def convert_table_to_clipboard_text(table_data):
-    """
-    Converts 2-D tabular data to clipboard text.
-
-    :param table_data: 2D tabular data
-    :return: clipboard text
-    """
-    return "\n".join(["\t".join(row) for row in table_data])
-
-
-class GeneratorModel(QAbstractTableModel):
-    def __init__(self, header_data, num_rows=25):
-        super().__init__()
-
-        self._header_data = header_data
-        self._default_num_rows = num_rows
-        self._table_data = self.empty_table(num_rows, len(header_data))
-
-    def empty_table(self, rows, columns):
-        return [[""] * columns for _ in range(rows)]
-
-    def data(self, index, role):
-        if role == Qt.DisplayRole or role == Qt.EditRole:
-            return self._table_data[index.row()][index.column()]
-
-    def setData(self, index, value, role):
-        if role == Qt.EditRole:
-            self._table_data[index.row()][index.column()] = value
-            return True
-
-    def rowCount(self, index):
-        return len(self._table_data)
-
-    def columnCount(self, index):
-        return len(self._header_data)
-
-    def flags(self, index):
-        return Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable
-
-    def headerData(self, section, orientation, role):
-        if role == Qt.DisplayRole and orientation == Qt.Horizontal:
-            return self._header_data[section]
-        if role == Qt.DisplayRole and orientation == Qt.Vertical:
-            return section + 1
-
-    def update_data_at_index(self, row, column, value):
-        self._table_data[row][column] = value
-        self.layoutChanged.emit()
-
-    def update_data_from_clipboard(self, copied_data, top_left_index):
-        # Copied data is tabular so insert at top-left most position
-        for row_index, row_data in enumerate(copied_data):
-            col_index = 0
-            current_row = top_left_index[0] + row_index
-            if current_row >= len(self._table_data):
-                self.create_empty_row(current_row)
-
-            index = 0
-            while index < len(row_data):
-                if top_left_index[1] + col_index < len(self._header_data):
-                    current_column = top_left_index[1] + col_index
-                    col_index += 1
-                    self._table_data[current_row][current_column] = row_data[index]
-                    index += 1
-                else:
-                    break
-
-        self.layoutChanged.emit()
-
-    def create_empty_row(self, position):
-        self._table_data.insert(position, [""] * len(self._header_data))
-
-    def removeRows(self, rows, index=QModelIndex()):
-        for row in sorted(rows, reverse=True):
-            self.beginRemoveRows(QModelIndex(), row, row)
-            del self._table_data[row]
-            self.endRemoveRows()
-        return True
-
-    def select_data(self, selected_indices):
-        curr_row = -1
-        row_data = []
-        selected_data = []
-        for row, column in selected_indices:
-            if row != curr_row:
-                if row_data:
-                    selected_data.append(row_data)
-                    row_data = []
-            curr_row = row
-            row_data.append(self._table_data[row][column])
-        if row_data:
-            selected_data.append(row_data)
-        return selected_data
-
-    def get_data(self):
-        return copy.deepcopy(self._table_data)
+from combo_widget import ComboWidget
+from model import GeneratorModel
+from utils import (convert_table_to_clipboard_text, extract_jira_table,
+                   extract_table_from_clipboard_text)
 
 
 class GeneratorUI(QtWidgets.QMainWindow):
@@ -169,6 +35,19 @@ class GeneratorUI(QtWidgets.QMainWindow):
         self.model = GeneratorModel(headers)
         self.tableView.setModel(self.model)
         self.tableView.setSelectionMode(QTableView.ContiguousSelection)
+
+        combo = ComboWidget(
+            self,
+            options=[
+                "Readable",
+                "AnalogMoveable",
+                "DigitalMoveable",
+                "MappedMoveable",
+                "StringReadable",
+                "StringMoveable",
+            ],
+        )
+        self.tableView.setItemDelegateForColumn(6, combo)
 
         self._create_keyboard_shortcuts()
 
@@ -253,18 +132,77 @@ class GeneratorUI(QtWidgets.QMainWindow):
 
     @pyqtSlot()
     def on_btnGenerate_clicked(self):
-        # TODO: Create a random file - new_setup_<timestamp>.py
+        filename = QFileDialog.getSaveFileName(
+            self,
+            "Save setup",
+            os.path.expanduser("~"),
+            "Setup files (*.py)",
+            initialFilter="*.py",
+        )[0]
+
+        if not filename:
+            return
+
         lines = [
             f"description = '{self.txtDescription.text()}'",
-            "\n",
+            "",
             f"pv_root = '{self.txtPvRoot.text()}:'",
-            "\n",
-            "devices = dict("
+            "",
+            "devices = dict(",
         ]
-        # TODO: this is the clever part
+        # This is the "clever" part
         table_data = self.model.get_data()
+        for row in table_data:
+            desc = row[0]
+            pv = row[2]
+            name = row[5]
+            ntype = row[6]
+            write = row[7]
+            target = row[8]
+            lowlevel = True if row[9] else False
+            if not name:
+                continue
 
-        print(lines)
+            lines.append(f"\t{name}=device(")
+            if ntype == "Readable":
+                lines.append("\t\t'nicos_ess.devices.epics.pva.EpicsReadable',")
+                lines.append(f"\t\tdescription='{desc}',")
+                lines.append(f"\t\treadpv='{{}}{pv}'.format(pv_root),")
+            elif ntype == "StringReadable":
+                lines.append("\t\t'nicos_ess.devices.epics.pva.EpicsStringReadable',")
+                lines.append(f"\t\tdescription='{desc}',")
+                lines.append(f"\t\treadpv='{{}}{pv}'.format(pv_root),")
+            elif ntype == "AnalogMoveable":
+                lines.append("\t\t'nicos_ess.devices.epics.pva.EpicsAnalogMoveable',")
+                lines.append(f"\t\tdescription='{desc}',")
+                lines.append(f"\t\treadpv='{{}}{pv}'.format(pv_root),")
+                lines.append(f"\t\twritepv='{{}}{write}'.format(pv_root),")
+                if target:
+                    lines.append(f"\t\ttargetpv='{{}}{target}'.format(pv_root),")
+            elif ntype == "DigitalMoveable":
+                lines.append("\t\t'nicos_ess.devices.epics.pva.EpicsDigitalMoveable',")
+                lines.append(f"\t\tdescription='{desc}',")
+                lines.append(f"\t\treadpv='{{}}{pv}'.format(pv_root),")
+                lines.append(f"\t\twritepv='{{}}{write}'.format(pv_root),")
+                if target:
+                    lines.append(f"\t\ttargetpv='{{}}{target}'.format(pv_root),")
+            elif ntype == "MappedMoveable":
+                lines.append("\t\t'nicos_ess.devices.epics.pva.EpicsDigitalMoveable',")
+                lines.append(f"\t\tdescription='{desc}',")
+                lines.append(f"\t\treadpv='{{}}{pv}'.format(pv_root),")
+                lines.append(f"\t\twritepv='{{}}{write}'.format(pv_root),")
+            elif ntype == "StringMoveable":
+                lines.append("\t\t'nicos_ess.devices.epics.pva.EpicsDigitalMoveable',")
+                lines.append(f"\t\tdescription='{desc}',")
+                lines.append(f"\t\treadpv='{{}}{pv}'.format(pv_root),")
+                lines.append(f"\t\twritepv='{{}}{write}'.format(pv_root),")
+            if lowlevel:
+                lines.append("\t\tlowlevel=True,")
+            lines.append("\t),")
+        lines.append(")")
+        print("\n".join(lines))
+        with open(filename, "w") as file:
+            file.write("\n".join(lines))
 
 
 if __name__ == "__main__":
